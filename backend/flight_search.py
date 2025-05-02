@@ -1,7 +1,6 @@
 from typing import Optional
 from playwright.async_api import async_playwright
 import random
-import json
 import asyncio
 from datetime import datetime, timedelta
 
