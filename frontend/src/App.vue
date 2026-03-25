@@ -63,7 +63,6 @@
                   v-if="monthDropdownOpen"
                   class="absolute top-full left-0 right-0 mt-2 bg-slate-800 border border-slate-600 rounded-xl shadow-2xl overflow-hidden"
                 >
-                  <!-- max-h-[240px] shows exactly 5 rows (~48px each) with smooth scroll -->
                   <ul class="max-h-[240px] overflow-y-auto divide-y divide-slate-700/50">
                     <li
                       v-for="m in nextMonths"
@@ -189,20 +188,36 @@
             </div>
           </div>
 
-          <!-- Submit -->
+          <!-- Submit + Progress -->
           <div class="flex flex-col sm:flex-row items-center gap-4 pt-2">
             <button
               type="submit"
               :disabled="loading"
-              class="w-full sm:w-auto flex items-center justify-center gap-2 px-8 py-3 bg-sky-600 hover:bg-sky-500 disabled:bg-slate-700 disabled:text-slate-500 text-white font-semibold rounded-xl transition-all duration-200 shadow-lg hover:shadow-sky-500/25 disabled:cursor-not-allowed"
+              class="w-full sm:w-auto shrink-0 flex items-center justify-center gap-2 px-8 py-3 bg-sky-600 hover:bg-sky-500 disabled:bg-slate-700 disabled:text-slate-500 text-white font-semibold rounded-xl transition-all duration-200 shadow-lg hover:shadow-sky-500/25 disabled:cursor-not-allowed"
             >
               <span v-if="loading" class="animate-spin">⏳</span>
               <span v-else>🚀</span>
               {{ loading ? 'Searching...' : 'Start Search' }}
             </button>
-            <span v-if="loading" class="text-xs sm:text-sm text-center sm:text-left text-slate-400 animate-pulse">
-              The search may take several minutes…
-            </span>
+
+            <!-- Progress Bar inline -->
+            <div v-if="loading" class="w-full space-y-1.5">
+              <div class="flex items-center justify-between">
+                <span class="text-xs text-slate-400 animate-pulse truncate pr-2">
+                  {{ searchingDate ? `Searching ${formatDate(searchingDate)}…` : 'Initializing…' }}
+                </span>
+                <span class="text-xs text-slate-500 font-mono tabular-nums shrink-0">
+                  {{ total > 0 ? `${Math.round((progress / total) * 100)}%` : '0%' }}
+                  <span v-if="results.length > 0" class="ml-1 text-emerald-400">· {{ results.length }} found</span>
+                </span>
+              </div>
+              <div class="h-2 bg-slate-800 rounded-full overflow-hidden">
+                <div
+                  class="h-full bg-sky-500 rounded-full transition-all duration-500 ease-out"
+                  :style="{ width: total > 0 ? `${Math.round((progress / total) * 100)}%` : '0%' }"
+                ></div>
+              </div>
+            </div>
           </div>
 
         </form>
@@ -222,10 +237,18 @@
         <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-3">
           <div>
             <h2 class="text-2xl font-bold text-white">📋 Results</h2>
-            <p class="text-slate-400 text-sm mt-1">{{ results.length }} combinations found, sorted by price</p>
+            <p class="text-slate-400 text-sm mt-1">
+              {{ results.length }} combination{{ results.length > 1 ? 's' : '' }} found
+              <span v-if="!loading"> · sorted by price</span>
+            </p>
           </div>
-          <span class="w-full sm:w-auto text-center px-4 py-2 bg-emerald-600/20 border border-emerald-600/40 text-emerald-400 rounded-xl text-sm font-semibold">
-            ✅ Search completed
+          <span
+            class="w-full sm:w-auto text-center px-4 py-2 rounded-xl text-sm font-semibold border"
+            :class="loading
+              ? 'bg-sky-600/20 border-sky-600/40 text-sky-400'
+              : 'bg-emerald-600/20 border-emerald-600/40 text-emerald-400'"
+          >
+            {{ loading ? '🔍 Search in progress…' : '✅ Search completed' }}
           </span>
         </div>
 
@@ -292,6 +315,7 @@ import AirportInput from './components/AirportInput.vue'
 import FlightCard from './components/FlightCard.vue'
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8000'
+const WS_BASE = API_BASE.replace(/^http/, 'ws')
 
 const form = reactive({
   departure_airport: '',
@@ -331,11 +355,8 @@ const nextMonths = computed(() => {
   for (let i = 0; i < 24; i++) {
     const d = new Date(y, m + i, 1)
     const val = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-
-    let monthStr = d.toLocaleString('en-US', { month: 'long' })
-
+    const monthStr = d.toLocaleString('en-US', { month: 'long' })
     const yearStr = d.getFullYear().toString()
-
     months.push({ value: val, fullLabel: `${monthStr} ${yearStr}` })
   }
   return months
@@ -354,6 +375,9 @@ function selectMonth(val) {
 const loading = ref(false)
 const error = ref(null)
 const results = ref([])
+const progress = ref(0)
+const total = ref(0)
+const searchingDate = ref(null)
 
 async function startSearch() {
   if (!form.departure_airport || !form.arrival_airport) {
@@ -364,43 +388,77 @@ async function startSearch() {
   loading.value = true
   error.value = null
   results.value = []
+  progress.value = 0
+  total.value = 0
+  searchingDate.value = null
+
+  const outFrom = form.out_dep_from ?? 0
+  const outTo   = form.out_dep_to   ?? 24
+  const retFrom = form.ret_dep_from ?? 0
+  const retTo   = form.ret_dep_to   ?? 24
+  const hasTimeFilter = form.out_dep_from !== null || form.out_dep_to !== null || form.ret_dep_from !== null || form.ret_dep_to !== null
+  const times = hasTimeFilter ? `${outFrom}-${outTo}-0-24_${retFrom}-${retTo}-0-24` : null
+
+  const params = {
+    departure_airport: form.departure_airport,
+    arrival_airport: form.arrival_airport,
+    departure_month: form.departure_month,
+    start_day: form.start_day,
+    trip_duration: form.trip_duration,
+    weekend_requirement: form.weekend_requirement,
+    times,
+    stop_number: form.stop_number,
+  }
 
   try {
-    const outFrom = form.out_dep_from ?? 0
-    const outTo   = form.out_dep_to   ?? 24
-    const retFrom = form.ret_dep_from ?? 0
-    const retTo   = form.ret_dep_to   ?? 24
-    const hasTimeFilter = form.out_dep_from !== null || form.out_dep_to !== null || form.ret_dep_from !== null || form.ret_dep_to !== null
-    const times = hasTimeFilter ? `${outFrom}-${outTo}-0-24_${retFrom}-${retTo}-0-24` : null
+    const ws = new WebSocket(`${WS_BASE}/ws/search`)
 
-    const response = await fetch(`${API_BASE}/search`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        departure_airport: form.departure_airport,
-        arrival_airport: form.arrival_airport,
-        departure_month: form.departure_month,
-        start_day: form.start_day,
-        trip_duration: form.trip_duration,
-        weekend_requirement: form.weekend_requirement,
-        times,
-        stop_number: form.stop_number,
-      }),
-    })
+    ws.onopen = () => ws.send(JSON.stringify(params))
 
-    const data = await response.json()
+    ws.onmessage = (event) => {
+      const msg = JSON.parse(event.data)
 
-    if (data.status === 'OK') {
-      results.value = data.results
-      if (results.value.length === 0) {
-        error.value = 'No flights found for the selected parameters.'
+      if (msg.type === 'init') {
+        total.value = msg.total
+
+      } else if (msg.type === 'progress') {
+        progress.value = msg.completed
+        if (msg.current_date) searchingDate.value = msg.current_date
+
+      } else if (msg.type === 'skip') {
+        progress.value = msg.completed
+
+      } else if (msg.type === 'result') {
+        progress.value = msg.completed
+        results.value.push(msg.data)
+
+      } else if (msg.type === 'done') {
+        results.value.sort((a, b) => a.cheapest_flight.price - b.cheapest_flight.price)
+        if (results.value.length === 0) {
+          error.value = 'No flights found for the selected parameters.'
+        }
+        loading.value = false
+        searchingDate.value = null
+
+      } else if (msg.type === 'error') {
+        error.value = msg.message || 'Unknown error from backend.'
+        loading.value = false
       }
-    } else {
-      error.value = data.message || 'Unknown error from backend.'
     }
+
+    ws.onerror = () => {
+      error.value = 'Could not connect to backend.'
+      loading.value = false
+    }
+
+    ws.onclose = () => {
+      if (loading.value) {
+        loading.value = false
+      }
+    }
+
   } catch (e) {
     error.value = `Could not connect to backend: ${e.message}`
-  } finally {
     loading.value = false
   }
 }

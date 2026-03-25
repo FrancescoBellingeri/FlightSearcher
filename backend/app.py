@@ -1,5 +1,5 @@
 from typing import Optional
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import httpx
@@ -13,6 +13,8 @@ logging.basicConfig(
     level=getattr(logging, os.getenv("LOG_LEVEL", "WARNING").upper(), logging.WARNING),
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
+
+logger = logging.getLogger(__name__)
 
 from flight_search import search_flight
 
@@ -74,13 +76,27 @@ async def search_airports(q: str):
         return {'status': 'Error', 'message': str(e)}
 
 
-@app.post('/search')
-async def start_search(params: SearchParams):
+@app.websocket('/ws/search')
+async def ws_search(websocket: WebSocket):
+    await websocket.accept()
     try:
-        result = await search_flight(params.dict())
-        return {"status": "OK", "results": result}
+        params = await websocket.receive_json()
+        async for message in search_flight(params):
+            await websocket.send_json(message)
+    except WebSocketDisconnect:
+        logger.info("Client disconnected during search")
     except Exception as e:
-        return {"status": "Error", "message": str(e)}
+        logger.error(f"WebSocket error: {e}")
+        try:
+            await websocket.send_json({"type": "error", "message": str(e)})
+        except Exception:
+            pass
+    finally:
+        try:
+            await websocket.close()
+        except Exception:
+            pass
+
 
 if __name__ == "__main__":
     import uvicorn

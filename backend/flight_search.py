@@ -158,10 +158,9 @@ async def search_flight(params: dict):
     departure_month = params['departure_month']
     start_day = params['start_day']
     trip_duration = params['trip_duration']
-    weekend_requirement = params['weekend_requirement']  # 'none', 'one', 'full'
+    weekend_requirement = params['weekend_requirement']
     times = params.get('times')
     stop_number = params.get('stop_number')
-    results_list = []
 
     year, month = map(int, departure_month.split('-'))
 
@@ -170,6 +169,12 @@ async def search_flight(params: dict):
     else:
         next_month = datetime(year, month + 1, 1)
     last_day = (next_month - timedelta(days=1)).day
+
+    total_days = last_day - start_day + 1
+    yield {"type": "init", "total": total_days}
+
+    results_list = []
+    completed = 0
 
     user_agents = [
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
@@ -189,16 +194,18 @@ async def search_flight(params: dict):
         for day in range(start_day, last_day + 1):
             departure_date = datetime(year, month, day)
             return_date = departure_date + timedelta(days=trip_duration)
-
-            if not check_weekend_requirements(departure_date, return_date, weekend_requirement):
-                logger.info(f"Skipping {departure_date.strftime('%Y-%m-%d')} - does not meet weekend requirements")
-                continue
-
             departure_str = departure_date.strftime("%Y-%m-%d")
             return_str = return_date.strftime("%Y-%m-%d")
 
+            if not check_weekend_requirements(departure_date, return_date, weekend_requirement):
+                completed += 1
+                yield {"type": "skip", "date": departure_str, "completed": completed}
+                continue
+
+            yield {"type": "progress", "completed": completed, "current_date": departure_str}
+
+            prev_count = len(results_list)
             page = await context.new_page()
-            # Track whether the response for this search has already been processed
             response_processed = False
 
             async def handle_response_wrapper(response):
@@ -223,7 +230,7 @@ async def search_flight(params: dict):
             try:
                 await page.goto(url)
                 timeout_seconds = 15
-                for _ in range(timeout_seconds * 2):  # check every 0.5s
+                for _ in range(timeout_seconds * 2):
                     if response_processed:
                         break
                     await asyncio.sleep(0.5)
@@ -235,10 +242,15 @@ async def search_flight(params: dict):
 
             except Exception as e:
                 logger.error(f"Error searching for day {departure_str}: {e}")
-                continue
             finally:
                 await page.close()
 
+            completed += 1
+            if len(results_list) > prev_count:
+                yield {"type": "result", "data": results_list[-1], "completed": completed}
+            else:
+                yield {"type": "progress", "completed": completed, "current_date": None}
+
         await browser.close()
-        results_list.sort(key=lambda x: x["cheapest_flight"]["price"])
-        return results_list
+
+    yield {"type": "done", "total_found": len(results_list)}
