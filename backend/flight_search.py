@@ -1,5 +1,4 @@
-from typing import Optional
-from playwright.async_api import async_playwright
+from rebrowser_playwright.async_api import async_playwright
 import random
 import asyncio
 from datetime import datetime, timedelta
@@ -44,8 +43,15 @@ def check_weekend_requirements(current_date, return_date, weekend_requirement='n
     
     return False
 
-async def create_search_url(departure_airport, arrival_airport, departure_date, return_date):
-    url = f"https://www.kiwi.com/en/search/results/{departure_airport}-italy/{arrival_airport}-turkey/{departure_date}/{return_date}?times=0-11-0-24_15-24-0-24&stopNumber=0%7Etrue"
+async def create_search_url(departure_airport, arrival_airport, departure_date, return_date, times=None, stop_number=None):
+    url = f"https://www.kiwi.com/en/search/results/{departure_airport}/{arrival_airport}/{departure_date}/{return_date}"
+    params = []
+    if times:
+        params.append(f"times={times}")
+    if stop_number is not None:
+        params.append(f"stopNumber={stop_number}%7Etrue")
+    if params:
+        url += "?" + "&".join(params)
     return url
 
 def find_flight_by_id(itineraries, flight_id):
@@ -153,6 +159,8 @@ async def search_flight(params: dict):
     start_day = params['start_day']
     trip_duration = params['trip_duration']
     weekend_requirement = params['weekend_requirement'] # 'none', 'one', 'both', 'full'
+    times = params.get('times')
+    stop_number = params.get('stop_number')
     results_list = []
 
     year, month = map(int, departure_month.split('-'))
@@ -164,7 +172,10 @@ async def search_flight(params: dict):
     last_day = (next_month - timedelta(days=1)).day
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
+        browser = await p.chromium.launch(
+            headless=True,
+            args=["--disable-blink-features=AutomationControlled"]
+        )
         context = await browser.new_context()
         
         for day in range(start_day, last_day + 1):
@@ -195,7 +206,9 @@ async def search_flight(params: dict):
                 departure_airport=departure_airport,
                 arrival_airport=arrival_airport,
                 departure_date=departure_str,
-                return_date=return_str
+                return_date=return_str,
+                times=times,
+                stop_number=stop_number,
             )
             
             print(f"Cercando voli: Partenza: {departure_str}, Ritorno: {return_str}")
