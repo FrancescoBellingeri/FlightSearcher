@@ -113,7 +113,8 @@ async function fetchAirports(q) {
 
   loading.value = true
   try {
-    const res = await fetch(`http://localhost:8000/airports?q=${encodeURIComponent(q)}`)
+    const apiBase = import.meta.env.VITE_API_BASE ?? 'http://localhost:8000'
+    const res = await fetch(`${apiBase}/airports?q=${encodeURIComponent(q)}`)
     const data = await res.json()
     if (data.status === 'OK') {
       results.value = data.results

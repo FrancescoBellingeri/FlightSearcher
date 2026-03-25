@@ -291,7 +291,7 @@ import { ref, reactive, computed } from 'vue'
 import AirportInput from './components/AirportInput.vue'
 import FlightCard from './components/FlightCard.vue'
 
-const API_BASE = 'http://localhost:8000'
+const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8000'
 
 const form = reactive({
   departure_airport: '',
