@@ -11,49 +11,78 @@
       </div>
     </header>
 
-    <main class="max-w-5xl mx-auto px-6 py-10 space-y-10">
+    <main class="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-10 space-y-8 sm:space-y-10">
 
       <!-- Search Card -->
-      <section class="bg-slate-900 border border-slate-700 rounded-2xl p-8 shadow-2xl">
-        <h2 class="text-2xl font-bold mb-1 text-white">🔍 Nuova Ricerca</h2>
-        <p class="text-slate-400 text-sm mb-8">Compila i parametri e avvia la ricerca su tutti i voli disponibili nel mese.</p>
+      <section class="bg-slate-900 border border-slate-700 rounded-2xl p-5 sm:p-8 shadow-2xl">
+        <h2 class="text-2xl font-bold mb-1 text-white">🔍 New Search</h2>
+        <p class="text-slate-400 text-sm mb-8">Fill in the parameters and search all available flights for the month.</p>
 
         <form @submit.prevent="startSearch" class="space-y-6">
 
-          <!-- Aeroporti -->
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <!-- Airports -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
             <AirportInput
               id="departure-airport"
-              label="🛫 Aeroporto di Partenza"
-              placeholder="Es. MXP — Milano Malpensa"
+              label="🛫 Departure Airport"
+              placeholder="e.g. MXP — Milan Malpensa"
               v-model="form.departure_airport"
+              v-model:displayLabel="form.departure_label"
             />
             <AirportInput
               id="arrival-airport"
-              label="🛬 Aeroporto di Arrivo"
-              placeholder="Es. IST — Istanbul"
+              label="🛬 Arrival Airport"
+              placeholder="e.g. IST — Istanbul"
               v-model="form.arrival_airport"
+              v-model:displayLabel="form.arrival_label"
             />
           </div>
 
-          <!-- Mese, giorno inizio, durata -->
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <!-- Mese -->
+          <!-- Month, start day, duration -->
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
+            <!-- Month -->
             <div>
-              <label for="departure-month" class="block text-sm font-semibold text-slate-300 mb-1">📅 Mese di Partenza</label>
-              <input
-                id="departure-month"
-                type="month"
-                v-model="form.departure_month"
-                required
-                class="w-full px-4 py-3 rounded-xl bg-slate-800 border border-slate-600 text-white focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30 transition-all duration-200"
-              />
-              <p class="mt-1 text-xs text-slate-500">Formato: YYYY-MM</p>
+              <label id="month-label" class="block text-sm font-semibold text-slate-300 mb-1">📅 Departure Month</label>
+
+              <!-- Overlay to close the dropdown on outside click -->
+              <div v-if="monthDropdownOpen" @click="monthDropdownOpen = false" class="fixed inset-0 z-40"></div>
+
+              <div class="relative z-50">
+                <button
+                  type="button"
+                  @click="monthDropdownOpen = !monthDropdownOpen"
+                  aria-labelledby="month-label"
+                  class="w-full px-4 py-3 rounded-xl bg-slate-800 border border-slate-600 text-white font-medium focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30 transition-all duration-200 cursor-pointer flex justify-between items-center"
+                >
+                  <span>{{ currentMonthLabel }}</span>
+                  <svg class="h-4 w-4 text-slate-400 transition-transform duration-200" :class="{ 'rotate-180': monthDropdownOpen }" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
+                </button>
+
+                <!-- Custom Dropdown List -->
+                <div
+                  v-if="monthDropdownOpen"
+                  class="absolute top-full left-0 right-0 mt-2 bg-slate-800 border border-slate-600 rounded-xl shadow-2xl overflow-hidden"
+                >
+                  <!-- max-h-[240px] shows exactly 5 rows (~48px each) with smooth scroll -->
+                  <ul class="max-h-[240px] overflow-y-auto divide-y divide-slate-700/50">
+                    <li
+                      v-for="m in nextMonths"
+                      :key="m.value"
+                      @click="selectMonth(m.value)"
+                      class="px-4 py-3 hover:bg-slate-700 cursor-pointer transition-colors duration-150 flex items-center justify-between text-slate-300 hover:text-white"
+                      :class="{ 'bg-sky-500/20 text-sky-400 font-bold': form.departure_month === m.value }"
+                    >
+                      <span>{{ m.fullLabel }}</span>
+                      <span v-if="form.departure_month === m.value" class="text-sky-400 text-sm">✓</span>
+                    </li>
+                  </ul>
+                </div>
+              </div>
             </div>
 
-            <!-- Giorno inizio -->
+            <!-- Start Day -->
             <div>
-              <label for="start-day" class="block text-sm font-semibold text-slate-300 mb-1">📆 Giorno di Inizio Ricerca</label>
+              <label for="start-day" class="block text-sm font-semibold text-slate-300 mb-1">📆 Search Start Day</label>
               <input
                 id="start-day"
                 type="number"
@@ -61,38 +90,38 @@
                 min="1"
                 max="31"
                 required
-                placeholder="Es. 1"
+                placeholder="e.g. 1"
                 class="w-full px-4 py-3 rounded-xl bg-slate-800 border border-slate-600 text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30 transition-all duration-200"
               />
-              <p class="mt-1 text-xs text-slate-500">La ricerca partirà da questo giorno del mese</p>
+              <p class="mt-1 text-xs text-slate-500">The search will start from this day of the month</p>
             </div>
 
-            <!-- Durata viaggio -->
+            <!-- Trip Duration -->
             <div>
-              <label for="trip-duration" class="block text-sm font-semibold text-slate-300 mb-1">⏱️ Durata del Viaggio (giorni)</label>
+              <label for="trip-duration" class="block text-sm font-semibold text-slate-300 mb-1">⏱️ Trip Duration (days)</label>
               <input
                 id="trip-duration"
                 type="number"
                 v-model.number="form.trip_duration"
                 min="1"
                 required
-                placeholder="Es. 7"
+                placeholder="e.g. 7"
                 class="w-full px-4 py-3 rounded-xl bg-slate-800 border border-slate-600 text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30 transition-all duration-200"
               />
-              <p class="mt-1 text-xs text-slate-500">Numero di notti/giorni di permanenza</p>
+              <p class="mt-1 text-xs text-slate-500">Number of nights / days of stay</p>
             </div>
           </div>
 
           <!-- Weekend Requirement -->
           <div>
-            <label class="block text-sm font-semibold text-slate-300 mb-3">🗓️ Requisiti Weekend</label>
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <label class="block text-sm font-semibold text-slate-300 mb-3">🗓️ Weekend Requirements</label>
+            <div class="grid grid-cols-3 gap-3">
               <label
                 v-for="opt in weekendOptions"
                 :key="opt.value"
                 :for="`weekend-${opt.value}`"
                 :class="[
-                  'flex flex-col items-center gap-1 p-4 rounded-xl border-2 cursor-pointer transition-all duration-200',
+                  'flex flex-col items-center gap-1 p-3 sm:p-4 rounded-xl border-2 cursor-pointer transition-all duration-200',
                   form.weekend_requirement === opt.value
                     ? 'border-sky-500 bg-sky-500/10 text-sky-400'
                     : 'border-slate-700 bg-slate-800 text-slate-400 hover:border-slate-500'
@@ -112,41 +141,41 @@
             </div>
           </div>
 
-          <!-- Filtri avanzati -->
+          <!-- Advanced Filters -->
           <div class="border border-slate-700 rounded-xl p-5 space-y-5">
-            <h3 class="text-sm font-semibold text-slate-300">⚙️ Filtri Avanzati</h3>
+            <h3 class="text-sm font-semibold text-slate-300">⚙️ Advanced Filters</h3>
 
-            <!-- Orari -->
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- Times -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
               <div>
-                <label class="block text-xs font-semibold text-slate-400 mb-2">🛫 Orario partenza andata</label>
+                <label class="block text-xs font-semibold text-slate-400 mb-2">🛫 Outbound departure time</label>
                 <div class="flex items-center gap-2">
-                  <input type="number" v-model.number="form.out_dep_from" min="0" max="23" class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white text-sm focus:outline-none focus:border-sky-500" placeholder="Da (0)" />
+                  <input type="number" v-model.number="form.out_dep_from" min="0" max="23" class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white text-sm focus:outline-none focus:border-sky-500" placeholder="From (0)" />
                   <span class="text-slate-500 shrink-0">—</span>
-                  <input type="number" v-model.number="form.out_dep_to" min="1" max="24" class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white text-sm focus:outline-none focus:border-sky-500" placeholder="A (24)" />
+                  <input type="number" v-model.number="form.out_dep_to" min="1" max="24" class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white text-sm focus:outline-none focus:border-sky-500" placeholder="To (24)" />
                 </div>
-                <p class="mt-1 text-xs text-slate-500">Ore (0–24)</p>
+                <p class="mt-1 text-xs text-slate-500">Hours (0–24)</p>
               </div>
               <div>
-                <label class="block text-xs font-semibold text-slate-400 mb-2">🛬 Orario partenza ritorno</label>
+                <label class="block text-xs font-semibold text-slate-400 mb-2">🛬 Return departure time</label>
                 <div class="flex items-center gap-2">
-                  <input type="number" v-model.number="form.ret_dep_from" min="0" max="23" class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white text-sm focus:outline-none focus:border-sky-500" placeholder="Da (0)" />
+                  <input type="number" v-model.number="form.ret_dep_from" min="0" max="23" class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white text-sm focus:outline-none focus:border-sky-500" placeholder="From (0)" />
                   <span class="text-slate-500 shrink-0">—</span>
-                  <input type="number" v-model.number="form.ret_dep_to" min="1" max="24" class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white text-sm focus:outline-none focus:border-sky-500" placeholder="A (24)" />
+                  <input type="number" v-model.number="form.ret_dep_to" min="1" max="24" class="w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white text-sm focus:outline-none focus:border-sky-500" placeholder="To (24)" />
                 </div>
-                <p class="mt-1 text-xs text-slate-500">Ore (0–24)</p>
+                <p class="mt-1 text-xs text-slate-500">Hours (0–24)</p>
               </div>
             </div>
 
-            <!-- Scali -->
+            <!-- Stops -->
             <div>
-              <label class="block text-xs font-semibold text-slate-400 mb-2">🔀 Numero di scali</label>
-              <div class="flex gap-3">
+              <label class="block text-xs font-semibold text-slate-400 mb-2">🔀 Number of stops</label>
+              <div class="grid grid-cols-2 md:flex gap-2 sm:gap-3">
                 <label
                   v-for="opt in stopOptions"
                   :key="opt.value"
                   :class="[
-                    'flex-1 flex flex-col items-center gap-1 p-3 rounded-xl border-2 cursor-pointer transition-all duration-200 text-center',
+                    'flex-1 flex flex-col items-center gap-1 p-2 sm:p-3 rounded-xl border-2 cursor-pointer transition-all duration-200 text-center',
                     form.stop_number === opt.value
                       ? 'border-sky-500 bg-sky-500/10 text-sky-400'
                       : 'border-slate-700 bg-slate-800 text-slate-400 hover:border-slate-500'
@@ -161,18 +190,18 @@
           </div>
 
           <!-- Submit -->
-          <div class="flex items-center gap-4 pt-2">
+          <div class="flex flex-col sm:flex-row items-center gap-4 pt-2">
             <button
               type="submit"
               :disabled="loading"
-              class="flex items-center gap-2 px-8 py-3 bg-sky-600 hover:bg-sky-500 disabled:bg-slate-700 disabled:text-slate-500 text-white font-semibold rounded-xl transition-all duration-200 shadow-lg hover:shadow-sky-500/25 disabled:cursor-not-allowed"
+              class="w-full sm:w-auto flex items-center justify-center gap-2 px-8 py-3 bg-sky-600 hover:bg-sky-500 disabled:bg-slate-700 disabled:text-slate-500 text-white font-semibold rounded-xl transition-all duration-200 shadow-lg hover:shadow-sky-500/25 disabled:cursor-not-allowed"
             >
               <span v-if="loading" class="animate-spin">⏳</span>
               <span v-else>🚀</span>
-              {{ loading ? 'Ricerca in corso...' : 'Avvia Ricerca' }}
+              {{ loading ? 'Searching...' : 'Start Search' }}
             </button>
-            <span v-if="loading" class="text-sm text-slate-400 animate-pulse">
-              La ricerca può richiedere diversi minuti…
+            <span v-if="loading" class="text-xs sm:text-sm text-center sm:text-left text-slate-400 animate-pulse">
+              The search may take several minutes…
             </span>
           </div>
 
@@ -183,20 +212,20 @@
       <div v-if="error" class="bg-red-950/50 border border-red-700 rounded-2xl p-6 flex items-start gap-4">
         <span class="text-2xl shrink-0">⚠️</span>
         <div>
-          <p class="font-semibold text-red-400 mb-1">Errore durante la ricerca</p>
+          <p class="font-semibold text-red-400 mb-1">Search error</p>
           <p class="text-sm text-red-300">{{ error }}</p>
         </div>
       </div>
 
       <!-- Results -->
       <section v-if="results.length > 0">
-        <div class="flex items-center justify-between mb-6">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-3">
           <div>
-            <h2 class="text-2xl font-bold text-white">📋 Risultati</h2>
-            <p class="text-slate-400 text-sm mt-1">{{ results.length }} combinazioni trovate, ordinate per prezzo</p>
+            <h2 class="text-2xl font-bold text-white">📋 Results</h2>
+            <p class="text-slate-400 text-sm mt-1">{{ results.length }} combinations found, sorted by price</p>
           </div>
-          <span class="px-4 py-2 bg-emerald-600/20 border border-emerald-600/40 text-emerald-400 rounded-xl text-sm font-semibold">
-            ✅ Ricerca completata
+          <span class="w-full sm:w-auto text-center px-4 py-2 bg-emerald-600/20 border border-emerald-600/40 text-emerald-400 rounded-xl text-sm font-semibold">
+            ✅ Search completed
           </span>
         </div>
 
@@ -206,51 +235,51 @@
             :key="idx"
             class="bg-slate-900 border border-slate-700 rounded-2xl overflow-hidden hover:border-slate-500 transition-all duration-200 group"
           >
-            <!-- Header risultato -->
-            <div class="flex items-center justify-between px-6 py-4 border-b border-slate-700/50 bg-slate-800/30">
-              <div class="flex items-center gap-4">
-                <span class="text-lg font-bold text-sky-400 bg-sky-500/10 border border-sky-500/30 rounded-lg px-3 py-1">#{{ idx + 1 }}</span>
-                <div>
-                  <p class="font-semibold text-white text-lg">
+            <!-- Result header -->
+            <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between px-4 sm:px-6 py-4 border-b border-slate-700/50 bg-slate-800/30 gap-3 sm:gap-0">
+              <div class="flex items-center gap-3 sm:gap-4 w-full">
+                <span class="text-lg font-bold text-sky-400 bg-sky-500/10 border border-sky-500/30 rounded-lg px-3 py-1 shrink-0">#{{ idx + 1 }}</span>
+                <div class="min-w-0 flex-1">
+                  <p class="font-semibold text-white text-base sm:text-lg truncate flex flex-wrap items-center">
                     {{ formatDate(item.search_date.departure) }}
                     <span class="text-slate-400 font-normal mx-2">→</span>
                     {{ formatDate(item.search_date.return) }}
                   </p>
-                  <p class="text-sm text-slate-400">{{ daysCount(item.search_date.departure, item.search_date.return) }} giorni di viaggio</p>
+                  <p class="text-sm text-slate-400">{{ daysCount(item.search_date.departure, item.search_date.return) }} day trip</p>
                 </div>
               </div>
             </div>
 
-            <!-- Voli -->
+            <!-- Flights -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-0 divide-y md:divide-y-0 md:divide-x divide-slate-700/50">
               <!-- Best -->
-              <div class="p-6">
+              <div class="p-4 sm:p-6">
                 <div class="flex items-center gap-2 mb-4">
                   <span class="text-yellow-400">⭐</span>
-                  <span class="text-sm font-bold text-yellow-400 uppercase tracking-wide">Miglior Volo</span>
-                  <span class="ml-auto text-xl font-bold text-white">€{{ item.best_flight.prezzo.toFixed(2) }}</span>
+                  <span class="text-sm font-bold text-yellow-400 uppercase tracking-wide">Best Flight</span>
+                  <span class="ml-auto text-xl font-bold text-white">€{{ item.best_flight.price.toFixed(2) }}</span>
                 </div>
-                <FlightCard :flight="item.best_flight" :departure="form.departure_airport" :arrival="form.arrival_airport" />
+                <FlightCard :flight="item.best_flight" />
               </div>
               <!-- Cheapest -->
-              <div class="p-6">
+              <div class="p-4 sm:p-6">
                 <div class="flex items-center gap-2 mb-4">
                   <span class="text-emerald-400">💰</span>
-                  <span class="text-sm font-bold text-emerald-400 uppercase tracking-wide">Più Economico</span>
-                  <span class="ml-auto text-xl font-bold text-white">€{{ item.cheapest_flight.prezzo.toFixed(2) }}</span>
+                  <span class="text-sm font-bold text-emerald-400 uppercase tracking-wide">Cheapest</span>
+                  <span class="ml-auto text-xl font-bold text-white">€{{ item.cheapest_flight.price.toFixed(2) }}</span>
                 </div>
-                <FlightCard :flight="item.cheapest_flight" :departure="form.departure_airport" :arrival="form.arrival_airport" />
+                <FlightCard :flight="item.cheapest_flight" />
               </div>
             </div>
           </div>
         </div>
       </section>
 
-      <!-- Empty state iniziale -->
-      <div v-else-if="!loading && !error" class="text-center py-16 text-slate-600">
+      <!-- Empty state -->
+      <div v-else-if="!loading && !error" class="text-center py-10 sm:py-16 text-slate-600">
         <p class="text-5xl mb-4">🗺️</p>
-        <p class="text-lg font-medium">Nessuna ricerca effettuata</p>
-        <p class="text-sm mt-1">Compila il form sopra e premi "Avvia Ricerca"</p>
+        <p class="text-lg font-medium">No search performed yet</p>
+        <p class="text-sm mt-1">Fill in the form above and press "Start Search"</p>
       </div>
 
     </main>
@@ -258,16 +287,17 @@
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { ref, reactive, computed } from 'vue'
 import AirportInput from './components/AirportInput.vue'
 import FlightCard from './components/FlightCard.vue'
 
 const API_BASE = 'http://localhost:8000'
 
-// Stato form
 const form = reactive({
   departure_airport: '',
+  departure_label: '',
   arrival_airport: '',
+  arrival_label: '',
   departure_month: new Date().toISOString().slice(0, 7),
   start_day: 1,
   trip_duration: 7,
@@ -280,18 +310,46 @@ const form = reactive({
 })
 
 const stopOptions = [
-  { value: null, icon: '🔀', label: 'Qualsiasi' },
-  { value: 0,    icon: '✈️', label: 'Diretto' },
-  { value: 1,    icon: '1️⃣', label: 'Max 1 scalo' },
-  { value: 2,    icon: '2️⃣', label: 'Max 2 scali' },
+  { value: null, icon: '🔀', label: 'Any' },
+  { value: 0,    icon: '✈️', label: 'Direct' },
+  { value: 1,    icon: '1️⃣', label: 'Max 1 stop' },
+  { value: 2,    icon: '2️⃣', label: 'Max 2 stops' },
 ]
 
 const weekendOptions = [
-  { value: 'none', icon: '❌', label: 'Nessuno', desc: 'Nessun requisito' },
-  { value: 'one',  icon: '📅', label: 'Almeno 1', desc: 'Almeno un giorno nel weekend' },
-  { value: 'both', icon: '📆', label: 'Almeno 2', desc: 'Almeno 2 giorni nel weekend' },
-  { value: 'full', icon: '🗓️', label: 'Weekend Intero', desc: 'Sabato e domenica inclusi' },
+  { value: 'none', icon: '❌', label: 'None',         desc: 'No requirement' },
+  { value: 'one',  icon: '📅', label: 'At least 1',  desc: 'At least one weekend day' },
+  { value: 'full', icon: '🗓️', label: 'Full weekend', desc: 'Both Saturday and Sunday' },
 ]
+
+const nextMonths = computed(() => {
+  const months = []
+  const today = new Date()
+  let y = today.getFullYear()
+  let m = today.getMonth()
+
+  for (let i = 0; i < 24; i++) {
+    const d = new Date(y, m + i, 1)
+    const val = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+
+    let monthStr = d.toLocaleString('en-US', { month: 'long' })
+
+    const yearStr = d.getFullYear().toString()
+
+    months.push({ value: val, fullLabel: `${monthStr} ${yearStr}` })
+  }
+  return months
+})
+
+const monthDropdownOpen = ref(false)
+const currentMonthLabel = computed(() => {
+  const found = nextMonths.value.find(m => m.value === form.departure_month)
+  return found ? found.fullLabel : 'Select Month'
+})
+function selectMonth(val) {
+  form.departure_month = val
+  monthDropdownOpen.value = false
+}
 
 const loading = ref(false)
 const error = ref(null)
@@ -299,7 +357,7 @@ const results = ref([])
 
 async function startSearch() {
   if (!form.departure_airport || !form.arrival_airport) {
-    error.value = 'Inserisci sia l\'aeroporto di partenza che quello di arrivo.'
+    error.value = 'Please enter both a departure and an arrival airport.'
     return
   }
 
@@ -335,13 +393,13 @@ async function startSearch() {
     if (data.status === 'OK') {
       results.value = data.results
       if (results.value.length === 0) {
-        error.value = 'Nessun volo trovato per i parametri selezionati.'
+        error.value = 'No flights found for the selected parameters.'
       }
     } else {
-      error.value = data.message || 'Errore sconosciuto dal backend.'
+      error.value = data.message || 'Unknown error from backend.'
     }
   } catch (e) {
-    error.value = `Impossibile connettersi al backend: ${e.message}`
+    error.value = `Could not connect to backend: ${e.message}`
   } finally {
     loading.value = false
   }
@@ -351,7 +409,7 @@ function formatDate(dateStr) {
   if (!dateStr) return ''
   const [y, m, d] = dateStr.split('-')
   const date = new Date(y, m - 1, d)
-  return date.toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+  return date.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
 }
 
 function daysCount(dep, ret) {
@@ -360,3 +418,13 @@ function daysCount(dep, ret) {
   return Math.round((d2 - d1) / (1000 * 60 * 60 * 24))
 }
 </script>
+
+<style>
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+</style>

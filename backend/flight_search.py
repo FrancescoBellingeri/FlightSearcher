@@ -2,45 +2,44 @@ from rebrowser_playwright.async_api import async_playwright
 import random
 import asyncio
 from datetime import datetime, timedelta
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 async def random_delay(min_ms=1000, max_ms=3000):
     delay = random.randint(min_ms, max_ms) / 1000
     await asyncio.sleep(delay)
 
 def is_weekend(date):
-    """Verifica se una data cade nel weekend (sabato=5 o domenica=6)"""
+    """Returns True if the date falls on a weekend (Saturday=5 or Sunday=6)."""
     return date.weekday() >= 5
 
 def check_weekend_requirements(current_date, return_date, weekend_requirement='none'):
     """
     Parameters:
-    weekend_requirement (str): 
-        'none' - nessun requisito weekend
-        'one' - almeno un giorno del weekend
-        'both' - entrambi i giorni del weekend
-        'full' - tutto il weekend (sabato e domenica)
+    weekend_requirement (str):
+        'none' - no weekend requirement
+        'one'  - at least one weekend day
+        'full' - full weekend (both Saturday and Sunday)
     """
     if weekend_requirement == 'none':
         return True
-        
-    # Crea lista di tutte le date del viaggio
+
     dates = []
     while current_date <= return_date:
         dates.append(current_date)
         current_date += timedelta(days=1)
-    
+
     weekend_days = sum(1 for d in dates if is_weekend(d))
-    
+
     if weekend_requirement == 'one':
         return weekend_days >= 1
-    elif weekend_requirement == 'both':
-        return weekend_days >= 2
     elif weekend_requirement == 'full':
-        # Verifica se c'è sia sabato che domenica
         has_saturday = any(d.weekday() == 5 for d in dates)
         has_sunday = any(d.weekday() == 6 for d in dates)
         return has_saturday and has_sunday
-    
+
     return False
 
 async def create_search_url(departure_airport, arrival_airport, departure_date, return_date, times=None, stop_number=None):
@@ -66,91 +65,93 @@ def format_flight_data(flight):
     outbound_arrival_time = outbound['destination']['localTime']
     outbound_duration = outbound['duration']
     outbound_carrier = outbound['carrier']['name']
+    outbound_departure_airport = outbound['source']['station']['name']
+    outbound_arrival_airport = outbound['destination']['station']['name']
 
     inbound = flight['inbound']['sectorSegments'][0]['segment']
     inbound_departure_time = inbound['source']['localTime']
     inbound_arrival_time = inbound['destination']['localTime']
     inbound_duration = inbound['duration']
     inbound_carrier = inbound['carrier']['name']
+    inbound_departure_airport = inbound['source']['station']['name']
+    inbound_arrival_airport = inbound['destination']['station']['name']
 
     price = float(flight['price']['amount'])
-    
-    flight_info = {
-        "andata": {
-            "orario partenza": outbound_departure_time,
-            "orario arrivo": outbound_arrival_time,
-            "durata volo": outbound_duration // 60,
-            "compagnia aerea": outbound_carrier
-        },
-        "ritorno": {
-            "orario partenza": inbound_departure_time,
-            "orario arrivo": inbound_arrival_time,
-            "durata volo": inbound_duration // 60,
-            "compagnia aerea": inbound_carrier
-        },
-        "prezzo": price
-    }
 
-    return flight_info
+    return {
+        "outbound": {
+            "departure_time": outbound_departure_time,
+            "arrival_time": outbound_arrival_time,
+            "duration": outbound_duration // 60,
+            "carrier": outbound_carrier,
+            "departure_airport": outbound_departure_airport,
+            "arrival_airport": outbound_arrival_airport,
+        },
+        "inbound": {
+            "departure_time": inbound_departure_time,
+            "arrival_time": inbound_arrival_time,
+            "duration": inbound_duration // 60,
+            "carrier": inbound_carrier,
+            "departure_airport": inbound_departure_airport,
+            "arrival_airport": inbound_arrival_airport,
+        },
+        "price": price,
+    }
 
 async def handle_response(response, departure_date, return_date, results_list):
     if "https://api.skypicker.com/umbrella/v2/graphql?featureName=SearchReturnItinerariesQuery" in response.url:
         try:
-            # Verifica che la risposta sia OK
             if not response.ok:
-                print(f"Risposta non valida: {response.status}")
+                logger.warning(f"Invalid response: {response.status}")
                 return
 
-            # Prova a ottenere il contenuto della risposta
             try:
                 data = await response.json()
             except Exception as e:
-                print(f"Errore nel parsing JSON: {e}")
+                logger.error(f"JSON parsing error: {e}")
                 text = await response.text()
-                print(f"Contenuto della risposta: {text[:200]}...")  # Stampa i primi 200 caratteri
+                logger.error(f"Response content: {text[:200]}...")
                 return
 
-            # Verifica che i dati contengano le chiavi necessarie
             if not data.get('data', {}).get('returnItineraries', {}).get('itineraries'):
-                print("Struttura JSON non valida o dati mancanti")
+                logger.warning("Invalid JSON structure or missing data")
                 return
 
             itineraries = data['data']['returnItineraries']['itineraries']
-            topResults = data['data']['returnItineraries']['metadata']['topResults']
+            top_results = data['data']['returnItineraries']['metadata']['topResults']
 
-            if not itineraries or not topResults:
-                print("Nessun volo trovato")
+            if not itineraries or not top_results:
+                logger.info("No flights found")
                 return
 
-            best_flight_id = topResults.get('best', {}).get('id')
-            cheapest_flight_id = topResults.get('cheapest', {}).get('id')
+            best_flight_id = top_results.get('best', {}).get('id')
+            cheapest_flight_id = top_results.get('cheapest', {}).get('id')
 
             if not best_flight_id or not cheapest_flight_id:
-                print("ID dei voli mancanti")
+                logger.warning("Missing flight IDs")
                 return
 
             best_flight = find_flight_by_id(itineraries, best_flight_id)
             cheapest_flight = find_flight_by_id(itineraries, cheapest_flight_id)
 
             if not best_flight or not cheapest_flight:
-                print("Impossibile trovare i voli con gli ID specificati")
+                logger.warning("Could not find flights with the specified IDs")
                 return
 
             formatted_data = {
                 "search_date": {
                     "departure": departure_date,
-                    "return": return_date
+                    "return": return_date,
                 },
                 "best_flight": format_flight_data(best_flight),
-                "cheapest_flight": format_flight_data(cheapest_flight)
+                "cheapest_flight": format_flight_data(cheapest_flight),
             }
 
             results_list.append(formatted_data)
-            print(f"Aggiunto risultato per la ricerca {departure_date}->{return_date}")
-            return
+            logger.info(f"Result added for search {departure_date}->{return_date}")
 
         except Exception as e:
-            print(f"Errore generale nel processare la risposta: {e}")
+            logger.error(f"General error processing response: {e}")
 
 async def search_flight(params: dict):
     departure_airport = params['departure_airport']
@@ -158,39 +159,47 @@ async def search_flight(params: dict):
     departure_month = params['departure_month']
     start_day = params['start_day']
     trip_duration = params['trip_duration']
-    weekend_requirement = params['weekend_requirement'] # 'none', 'one', 'both', 'full'
+    weekend_requirement = params['weekend_requirement']  # 'none', 'one', 'full'
     times = params.get('times')
     stop_number = params.get('stop_number')
     results_list = []
 
     year, month = map(int, departure_month.split('-'))
-    
+
     if month == 12:
         next_month = datetime(year + 1, 1, 1)
     else:
         next_month = datetime(year, month + 1, 1)
     last_day = (next_month - timedelta(days=1)).day
 
+    user_agents = [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+    ]
+
     async with async_playwright() as p:
         browser = await p.chromium.launch(
             headless=True,
             args=["--disable-blink-features=AutomationControlled"]
         )
-        context = await browser.new_context()
-        
+        context = await browser.new_context(
+            user_agent=random.choice(user_agents),
+            viewport={"width": 1920, "height": 1080}
+        )
+
         for day in range(start_day, last_day + 1):
             departure_date = datetime(year, month, day)
             return_date = departure_date + timedelta(days=trip_duration)
 
             if not check_weekend_requirements(departure_date, return_date, weekend_requirement):
-                print(f"Skip date {departure_date.strftime('%Y-%m-%d')} - non soddisfa i requisiti del weekend")
+                logger.info(f"Skipping {departure_date.strftime('%Y-%m-%d')} - does not meet weekend requirements")
                 continue
-            
+
             departure_str = departure_date.strftime("%Y-%m-%d")
             return_str = return_date.strftime("%Y-%m-%d")
-            
+
             page = await context.new_page()
-            # Variabile per tracciare se abbiamo già salvato i dati per questa ricerca
+            # Track whether the response for this search has already been processed
             response_processed = False
 
             async def handle_response_wrapper(response):
@@ -199,9 +208,8 @@ async def search_flight(params: dict):
                     await handle_response(response, departure_str, return_str, results_list)
                     response_processed = True
 
-            # Aggiungi il listener
             page.on("response", handle_response_wrapper)
-            
+
             url = await create_search_url(
                 departure_airport=departure_airport,
                 arrival_airport=arrival_airport,
@@ -210,20 +218,28 @@ async def search_flight(params: dict):
                 times=times,
                 stop_number=stop_number,
             )
-            
-            print(f"Cercando voli: Partenza: {departure_str}, Ritorno: {return_str}")
-            
+
+            logger.info(f"Searching flights: Departure: {departure_str}, Return: {return_str}")
+
             try:
                 await page.goto(url)
-                #await page.wait_for_load_state("networkidle")
+                timeout_seconds = 15
+                for _ in range(timeout_seconds * 2):  # check every 0.5s
+                    if response_processed:
+                        break
+                    await asyncio.sleep(0.5)
+
+                if not response_processed:
+                    logger.warning(f"Timeout for search {departure_str}->{return_str}")
+
                 await random_delay(2000, 5000)
-                
+
             except Exception as e:
-                print(f"Errore durante la ricerca per il giorno {departure_str}: {e}")
+                logger.error(f"Error searching for day {departure_str}: {e}")
                 continue
             finally:
                 await page.close()
-        
+
         await browser.close()
-        results_list.sort(key=lambda x: x["cheapest_flight"]["prezzo"])
+        results_list.sort(key=lambda x: x["cheapest_flight"]["price"])
         return results_list
