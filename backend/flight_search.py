@@ -4,7 +4,6 @@ import asyncio
 from datetime import datetime, timedelta
 import logging
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 async def random_delay(min_ms=1000, max_ms=3000):

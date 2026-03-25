@@ -3,6 +3,16 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import httpx
+import os
+import logging
+from dotenv import load_dotenv
+
+load_dotenv()
+
+logging.basicConfig(
+    level=getattr(logging, os.getenv("LOG_LEVEL", "WARNING").upper(), logging.WARNING),
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
 
 from flight_search import search_flight
 
@@ -10,7 +20,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify the exact origin
+    allow_origins=[os.getenv("ALLOWED_ORIGINS") or "*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
