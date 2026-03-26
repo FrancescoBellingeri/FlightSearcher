@@ -1,4 +1,4 @@
-from rebrowser_playwright.async_api import async_playwright
+from rebrowser_playwright.async_api import async_playwright, Browser
 import random
 import asyncio
 from datetime import datetime, timedelta
@@ -152,7 +152,7 @@ async def handle_response(response, departure_date, return_date, results_list):
         except Exception as e:
             logger.error(f"General error processing response: {e}")
 
-async def search_flight(params: dict):
+async def search_flight(params: dict, browser: Browser):
     departure_airport = params['departure_airport']
     arrival_airport = params['arrival_airport']
     departure_month = params['departure_month']
@@ -181,16 +181,12 @@ async def search_flight(params: dict):
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
     ]
 
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            headless=True,
-            args=["--disable-blink-features=AutomationControlled"]
-        )
-        context = await browser.new_context(
-            user_agent=random.choice(user_agents),
-            viewport={"width": 1920, "height": 1080}
-        )
+    context = await browser.new_context(
+        user_agent=random.choice(user_agents),
+        viewport={"width": 1920, "height": 1080}
+    )
 
+    try:
         for day in range(start_day, last_day + 1):
             departure_date = datetime(year, month, day)
             return_date = departure_date + timedelta(days=trip_duration)
@@ -208,10 +204,10 @@ async def search_flight(params: dict):
             page = await context.new_page()
             response_processed = False
 
-            async def handle_response_wrapper(response):
+            async def handle_response_wrapper(response, _dep=departure_str, _ret=return_str):
                 nonlocal response_processed
                 if not response_processed and "https://api.skypicker.com/umbrella/v2/graphql?featureName=SearchReturnItinerariesQuery" in response.url:
-                    await handle_response(response, departure_str, return_str, results_list)
+                    await handle_response(response, _dep, _ret, results_list)
                     response_processed = True
 
             page.on("response", handle_response_wrapper)
@@ -251,6 +247,7 @@ async def search_flight(params: dict):
             else:
                 yield {"type": "progress", "completed": completed, "current_date": None}
 
-        await browser.close()
+    finally:
+        await context.close()
 
     yield {"type": "done", "total_found": len(results_list)}

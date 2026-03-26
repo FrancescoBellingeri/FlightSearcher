@@ -204,7 +204,7 @@
             <div v-if="loading" class="w-full space-y-1.5">
               <div class="flex items-center justify-between">
                 <span class="text-xs text-slate-400 animate-pulse truncate pr-2">
-                  {{ searchingDate ? `Searching ${formatDate(searchingDate)}…` : 'Initializing…' }}
+                  {{ queued ? 'Waiting for another search to finish…' : searchingDate ? `Searching ${formatDate(searchingDate)}…` : 'Initializing…' }}
                 </span>
                 <span class="text-xs text-slate-500 font-mono tabular-nums shrink-0">
                   {{ total > 0 ? `${Math.round((progress / total) * 100)}%` : '0%' }}
@@ -373,6 +373,7 @@ function selectMonth(val) {
 }
 
 const loading = ref(false)
+const queued = ref(false)
 const error = ref(null)
 const results = ref([])
 const progress = ref(0)
@@ -386,6 +387,7 @@ async function startSearch() {
   }
 
   loading.value = true
+  queued.value = false
   error.value = null
   results.value = []
   progress.value = 0
@@ -418,7 +420,11 @@ async function startSearch() {
     ws.onmessage = (event) => {
       const msg = JSON.parse(event.data)
 
-      if (msg.type === 'init') {
+      if (msg.type === 'queued') {
+        queued.value = true
+
+      } else if (msg.type === 'init') {
+        queued.value = false
         total.value = msg.total
 
       } else if (msg.type === 'progress') {

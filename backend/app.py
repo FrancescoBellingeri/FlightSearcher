@@ -1,11 +1,14 @@
 from typing import Optional
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import httpx
 import os
+import asyncio
 import logging
 from dotenv import load_dotenv
+from rebrowser_playwright.async_api import async_playwright
 
 load_dotenv()
 
@@ -18,7 +21,34 @@ logger = logging.getLogger(__name__)
 
 from flight_search import search_flight
 
-app = FastAPI()
+BROWSER_POOL_SIZE = int(os.getenv("BROWSER_POOL_SIZE", "2"))
+
+_playwright = None
+_browser_pool: asyncio.Queue = None
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    global _playwright, _browser_pool
+    logger.info(f"Launching {BROWSER_POOL_SIZE} Chromium browser(s)...")
+    _playwright = await async_playwright().start()
+    _browser_pool = asyncio.Queue()
+    for _ in range(BROWSER_POOL_SIZE):
+        browser = await _playwright.chromium.launch(
+            headless=True,
+            args=["--disable-blink-features=AutomationControlled"]
+        )
+        await _browser_pool.put(browser)
+    logger.info("Browser pool ready.")
+    yield
+    logger.info("Closing browsers...")
+    while not _browser_pool.empty():
+        browser = await _browser_pool.get()
+        await browser.close()
+    await _playwright.stop()
+
+
+app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -27,6 +57,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 class SearchParams(BaseModel):
     departure_airport: str
@@ -37,6 +68,7 @@ class SearchParams(BaseModel):
     weekend_requirement: str
     times: Optional[str] = None
     stop_number: Optional[int] = None
+
 
 @app.get('/airports')
 async def search_airports(q: str):
@@ -81,8 +113,17 @@ async def ws_search(websocket: WebSocket):
     await websocket.accept()
     try:
         params = await websocket.receive_json()
-        async for message in search_flight(params):
-            await websocket.send_json(message)
+
+        if _browser_pool.empty():
+            await websocket.send_json({"type": "queued"})
+
+        browser = await _browser_pool.get()
+        try:
+            async for message in search_flight(params, browser):
+                await websocket.send_json(message)
+        finally:
+            await _browser_pool.put(browser)
+
     except WebSocketDisconnect:
         logger.info("Client disconnected during search")
     except Exception as e:
