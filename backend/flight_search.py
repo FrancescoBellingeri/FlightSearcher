@@ -97,7 +97,7 @@ def format_flight_data(flight):
         "price": price,
     }
 
-async def handle_response(response, departure_date, return_date, results_list):
+async def handle_response(response, departure_date, return_date, results_list, search_url=None):
     if "https://api.skypicker.com/umbrella/v2/graphql?featureName=SearchReturnItinerariesQuery" in response.url:
         try:
             if not response.ok:
@@ -144,6 +144,7 @@ async def handle_response(response, departure_date, return_date, results_list):
                 },
                 "best_flight": format_flight_data(best_flight),
                 "cheapest_flight": format_flight_data(cheapest_flight),
+                "search_url": search_url,
             }
 
             results_list.append(formatted_data)
@@ -201,16 +202,6 @@ async def search_flight(params: dict, browser: Browser):
             yield {"type": "progress", "completed": completed, "current_date": departure_str}
 
             prev_count = len(results_list)
-            page = await context.new_page()
-            response_processed = False
-
-            async def handle_response_wrapper(response, _dep=departure_str, _ret=return_str):
-                nonlocal response_processed
-                if not response_processed and "https://api.skypicker.com/umbrella/v2/graphql?featureName=SearchReturnItinerariesQuery" in response.url:
-                    await handle_response(response, _dep, _ret, results_list)
-                    response_processed = True
-
-            page.on("response", handle_response_wrapper)
 
             url = await create_search_url(
                 departure_airport=departure_airport,
@@ -220,6 +211,17 @@ async def search_flight(params: dict, browser: Browser):
                 times=times,
                 stop_number=stop_number,
             )
+
+            page = await context.new_page()
+            response_processed = False
+
+            async def handle_response_wrapper(response, _dep=departure_str, _ret=return_str, _url=url):
+                nonlocal response_processed
+                if not response_processed and "https://api.skypicker.com/umbrella/v2/graphql?featureName=SearchReturnItinerariesQuery" in response.url:
+                    await handle_response(response, _dep, _ret, results_list, _url)
+                    response_processed = True
+
+            page.on("response", handle_response_wrapper)
 
             logger.info(f"Searching flights: Departure: {departure_str}, Return: {return_str}")
 

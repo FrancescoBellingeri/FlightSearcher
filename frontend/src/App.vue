@@ -6,7 +6,6 @@
         <span class="text-2xl">✈️</span>
         <div>
           <h1 class="text-xl font-bold text-white tracking-tight">FlightSearcher</h1>
-          <p class="text-xs text-slate-400">Powered by Kiwi.com</p>
         </div>
       </div>
     </header>
@@ -276,23 +275,25 @@
             <!-- Flights -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-0 divide-y md:divide-y-0 md:divide-x divide-slate-700/50">
               <!-- Best -->
-              <div class="p-4 sm:p-6">
+              <a :href="item.search_url" target="_blank" rel="noopener noreferrer" class="block p-4 sm:p-6 hover:bg-slate-800/40 transition-colors duration-200">
                 <div class="flex items-center gap-2 mb-4">
                   <span class="text-yellow-400">⭐</span>
                   <span class="text-sm font-bold text-yellow-400 uppercase tracking-wide">Best Flight</span>
                   <span class="ml-auto text-xl font-bold text-white">€{{ item.best_flight.price.toFixed(2) }}</span>
                 </div>
                 <FlightCard :flight="item.best_flight" />
-              </div>
+                <p class="mt-3 text-xs text-slate-500 text-right">Book on Kiwi.com →</p>
+              </a>
               <!-- Cheapest -->
-              <div class="p-4 sm:p-6">
+              <a :href="item.search_url" target="_blank" rel="noopener noreferrer" class="block p-4 sm:p-6 hover:bg-slate-800/40 transition-colors duration-200">
                 <div class="flex items-center gap-2 mb-4">
                   <span class="text-emerald-400">💰</span>
                   <span class="text-sm font-bold text-emerald-400 uppercase tracking-wide">Cheapest</span>
                   <span class="ml-auto text-xl font-bold text-white">€{{ item.cheapest_flight.price.toFixed(2) }}</span>
                 </div>
                 <FlightCard :flight="item.cheapest_flight" />
-              </div>
+                <p class="mt-3 text-xs text-slate-500 text-right">Book on Kiwi.com →</p>
+              </a>
             </div>
           </div>
         </div>
