@@ -171,6 +171,7 @@ async def search_day(context, semaphore, departure_airport, arrival_airport,
 
         async def handle_response_wrapper(response):
             nonlocal response_processed
+            logger.debug(f"[{departure_str}] {response.status} {response.url[:80]}")
             if not response_processed and "https://api.skypicker.com/umbrella/v2/graphql?featureName=SearchReturnItinerariesQuery" in response.url:
                 await handle_response(response, departure_str, return_str, local_results, url)
                 response_processed = True
@@ -249,6 +250,7 @@ async def search_flight(params: dict, browser: Browser):
                 yield {"type": "skip", "date": departure_str, "completed": completed}
                 continue
 
+            await asyncio.sleep(random.uniform(1.0, 3.0))
             asyncio.create_task(search_day(
                 context, semaphore, departure_airport, arrival_airport,
                 departure_str, return_str, times, stop_number, queue
