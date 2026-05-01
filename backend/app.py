@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 from flight_search import search_flight
 
 BROWSER_POOL_SIZE = int(os.getenv("BROWSER_POOL_SIZE", "2"))
+PAGE_CONCURRENCY = int(os.getenv("PAGE_CONCURRENCY", "5"))
 
 _playwright = None
 _browser_pool: asyncio.Queue = None
@@ -119,6 +120,7 @@ async def ws_search(websocket: WebSocket):
 
         browser = await _browser_pool.get()
         try:
+            params['concurrency'] = PAGE_CONCURRENCY
             async for message in search_flight(params, browser):
                 await websocket.send_json(message)
         finally:

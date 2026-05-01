@@ -153,6 +153,52 @@ async def handle_response(response, departure_date, return_date, results_list, s
         except Exception as e:
             logger.error(f"General error processing response: {e}")
 
+async def search_day(context, semaphore, departure_airport, arrival_airport,
+                     departure_str, return_str, times, stop_number, queue):
+    async with semaphore:
+        local_results = []
+        page = await context.new_page()
+        response_processed = False
+
+        url = await create_search_url(
+            departure_airport=departure_airport,
+            arrival_airport=arrival_airport,
+            departure_date=departure_str,
+            return_date=return_str,
+            times=times,
+            stop_number=stop_number,
+        )
+
+        async def handle_response_wrapper(response):
+            nonlocal response_processed
+            if not response_processed and "https://api.skypicker.com/umbrella/v2/graphql?featureName=SearchReturnItinerariesQuery" in response.url:
+                await handle_response(response, departure_str, return_str, local_results, url)
+                response_processed = True
+
+        page.on("response", handle_response_wrapper)
+
+        logger.info(f"Searching flights: Departure: {departure_str}, Return: {return_str}")
+
+        try:
+            await page.goto(url)
+            for _ in range(30):
+                if response_processed:
+                    break
+                await asyncio.sleep(0.5)
+
+            if not response_processed:
+                logger.warning(f"Timeout for search {departure_str}->{return_str}")
+
+            await random_delay(2000, 5000)
+
+        except Exception as e:
+            logger.error(f"Error searching for day {departure_str}: {e}")
+        finally:
+            await page.close()
+
+        await queue.put(local_results[-1] if local_results else None)
+
+
 async def search_flight(params: dict, browser: Browser):
     departure_airport = params['departure_airport']
     arrival_airport = params['arrival_airport']
@@ -162,6 +208,7 @@ async def search_flight(params: dict, browser: Browser):
     weekend_requirement = params['weekend_requirement']
     times = params.get('times')
     stop_number = params.get('stop_number')
+    concurrency = params.get('concurrency', 5)
 
     year, month = map(int, departure_month.split('-'))
 
@@ -174,8 +221,11 @@ async def search_flight(params: dict, browser: Browser):
     total_days = last_day - start_day + 1
     yield {"type": "init", "total": total_days}
 
-    results_list = []
+    semaphore = asyncio.Semaphore(concurrency)
+    queue = asyncio.Queue()
     completed = 0
+    results_count = 0
+    tasks_launched = 0
 
     user_agents = [
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
@@ -199,57 +249,22 @@ async def search_flight(params: dict, browser: Browser):
                 yield {"type": "skip", "date": departure_str, "completed": completed}
                 continue
 
-            yield {"type": "progress", "completed": completed, "current_date": departure_str}
+            asyncio.create_task(search_day(
+                context, semaphore, departure_airport, arrival_airport,
+                departure_str, return_str, times, stop_number, queue
+            ))
+            tasks_launched += 1
 
-            prev_count = len(results_list)
-
-            url = await create_search_url(
-                departure_airport=departure_airport,
-                arrival_airport=arrival_airport,
-                departure_date=departure_str,
-                return_date=return_str,
-                times=times,
-                stop_number=stop_number,
-            )
-
-            page = await context.new_page()
-            response_processed = False
-
-            async def handle_response_wrapper(response, _dep=departure_str, _ret=return_str, _url=url):
-                nonlocal response_processed
-                if not response_processed and "https://api.skypicker.com/umbrella/v2/graphql?featureName=SearchReturnItinerariesQuery" in response.url:
-                    await handle_response(response, _dep, _ret, results_list, _url)
-                    response_processed = True
-
-            page.on("response", handle_response_wrapper)
-
-            logger.info(f"Searching flights: Departure: {departure_str}, Return: {return_str}")
-
-            try:
-                await page.goto(url)
-                timeout_seconds = 15
-                for _ in range(timeout_seconds * 2):
-                    if response_processed:
-                        break
-                    await asyncio.sleep(0.5)
-
-                if not response_processed:
-                    logger.warning(f"Timeout for search {departure_str}->{return_str}")
-
-                await random_delay(2000, 5000)
-
-            except Exception as e:
-                logger.error(f"Error searching for day {departure_str}: {e}")
-            finally:
-                await page.close()
-
+        for _ in range(tasks_launched):
+            flight_data = await queue.get()
             completed += 1
-            if len(results_list) > prev_count:
-                yield {"type": "result", "data": results_list[-1], "completed": completed}
+            if flight_data:
+                results_count += 1
+                yield {"type": "result", "data": flight_data, "completed": completed}
             else:
                 yield {"type": "progress", "completed": completed, "current_date": None}
 
     finally:
         await context.close()
 
-    yield {"type": "done", "total_found": len(results_list)}
+    yield {"type": "done", "total_found": results_count}
